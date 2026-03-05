@@ -1,0 +1,133 @@
+import gymnasium as gym
+import torch
+import torch.nn as nn
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+import joblib
+import time
+
+# -------------------------
+# Load scalers
+# -------------------------
+x_scaler = joblib.load("x_scaler.save")
+y_scaler = joblib.load("y_scaler.save")
+
+# -------------------------
+# Neural model
+# -------------------------
+class CartPoleMLP(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+        self.net = nn.Sequential(
+            nn.Linear(5,128),
+            nn.ReLU(),
+            nn.Linear(128,128),
+            nn.ReLU(),
+            nn.Linear(128,64),
+            nn.ReLU(),
+            nn.Linear(64,4)
+        )
+
+    def forward(self,x):
+        return self.net(x)
+
+model = CartPoleMLP()
+model.load_state_dict(torch.load("cartpole_model.pth"))
+model.eval()
+
+# -------------------------
+# Gym environment
+# -------------------------
+env = gym.make("CartPole-v1")
+
+obs, info = env.reset()
+mlp_state = obs.copy()
+
+# -------------------------
+# Visualization
+# -------------------------
+fig, ax = plt.subplots()
+
+ax.set_xlim(-4,4)
+ax.set_ylim(-1,2)
+ax.set_aspect("equal")
+
+cart_width = 0.3
+pole_length = 1
+
+cart_real, = ax.plot([],[],lw=6,label="Real")
+pole_real, = ax.plot([],[],lw=3)
+
+cart_mlp, = ax.plot([],[],lw=6,label="MLP")
+pole_mlp, = ax.plot([],[],lw=3)
+
+ax.legend()
+
+# -------------------------
+# Animation update
+# -------------------------
+def update(frame):
+
+    global obs, mlp_state
+
+    action = env.action_space.sample()
+
+    # ----- REAL SYSTEM -----
+    obs, reward, terminated, truncated, info = env.step(action)
+
+    theta_real = obs[2]
+
+    # ----- MLP SYSTEM -----
+    inp = np.concatenate((mlp_state,[action]))
+    inp_scaled = x_scaler.transform([inp])
+    inp_tensor = torch.tensor(inp_scaled,dtype=torch.float32)
+
+    with torch.no_grad():
+        pred = model(inp_tensor)
+
+    pred = pred.numpy()
+    pred = y_scaler.inverse_transform(pred)
+
+    mlp_state = pred[0]
+
+    theta_mlp = mlp_state[2]
+
+    # ----- RESET CONDITION -----
+    if abs(theta_real) > np.pi/2 or abs(theta_mlp) > np.pi/2:
+
+        print("Reset triggered")
+
+        time.sleep(1)
+
+        obs, info = env.reset()
+        mlp_state = obs.copy()
+
+    # ----- DRAW REAL -----
+    x = obs[0]
+    theta = obs[2]
+
+    pole_x = x + pole_length*np.sin(theta)
+    pole_y = pole_length*np.cos(theta)
+
+    cart_real.set_data([x-cart_width/2,x+cart_width/2],[0,0])
+    pole_real.set_data([x,pole_x],[0,pole_y])
+
+    # ----- DRAW MLP -----
+    x2 = mlp_state[0]
+    theta2 = mlp_state[2]
+
+    pole_x2 = x2 + pole_length*np.sin(theta2)
+    pole_y2 = pole_length*np.cos(theta2)
+
+    cart_mlp.set_data([x2-cart_width/2,x2+cart_width/2],[0.6,0.6])
+    pole_mlp.set_data([x2,pole_x2],[0.6,pole_y2])
+
+    return cart_real,pole_real,cart_mlp,pole_mlp
+
+
+ani = FuncAnimation(fig, update, interval=30)
+
+plt.show()
