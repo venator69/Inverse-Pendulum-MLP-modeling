@@ -1,4 +1,4 @@
-#Inverse Pendulum MLP modeling
+# Inverse Pendulum MLP modeling
 ### File structure :
 1. Inverted-Pendulum-viz.py -> Modeling awal inverted Pendulum menggunakan library gymnasium dari pygame
 2. cartpole_model.pth -> Model cartpole ANN yang disimpan
